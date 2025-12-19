@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.buttonAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+        findViewById<Button>(R.id.buttonAttendance).setOnClickListener {
+            startActivity(Intent(this, AttendanceActivity::class.java))
+        }
     }
 
     override fun onResume() {

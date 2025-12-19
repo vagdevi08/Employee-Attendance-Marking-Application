@@ -5,11 +5,19 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.*
 
 class ResultActivity : AppCompatActivity() {
+
+    private lateinit var dbManager: DBManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_result)
+
+        dbManager = DBManager(this)
 
         val identifyedFace = intent.getParcelableExtra("identified_face") as? Bitmap
         val enrolledFace = intent.getParcelableExtra("enrolled_face") as? Bitmap
@@ -24,6 +32,18 @@ class ResultActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.imageIdentified).setImageBitmap(identifyedFace)
         findViewById<TextView>(R.id.textPerson).text = "Identified: " + identifiedName
         findViewById<TextView>(R.id.textSimilarity).text = "Similarity: " + similarity
+        val attendanceTime = System.currentTimeMillis()
+        if (!identifiedName.isNullOrEmpty()) {
+            dbManager.insertAttendance(identifiedName, attendanceTime)
+            val formatter = SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault())
+            findViewById<TextView>(R.id.textAttendanceTime).text =
+                "Attendance marked: ${formatter.format(Date(attendanceTime))}"
+            Toast.makeText(
+                this,
+                getString(R.string.attendance_marked, identifiedName),
+                Toast.LENGTH_LONG
+            ).show()
+        }
         findViewById<TextView>(R.id.textLiveness).text = "Liveness score: " + livenessScore
         findViewById<TextView>(R.id.textYaw).text = "Yaw: " + yaw
         findViewById<TextView>(R.id.textRoll).text = "Roll: " + roll

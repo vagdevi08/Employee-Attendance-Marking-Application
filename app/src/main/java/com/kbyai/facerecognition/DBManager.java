@@ -14,9 +14,13 @@ import java.util.ArrayList;
 public class DBManager extends SQLiteOpenHelper {
 
     public static ArrayList<Person> personList = new ArrayList<Person>();
+    public static ArrayList<AttendanceLog> attendanceList = new ArrayList<>();
+
+    private static final String DB_NAME = "mydb";
+    private static final int DB_VERSION = 2;
 
     public DBManager(Context context) {
-        super(context, "mydb" , null, 1);
+        super(context, DB_NAME , null, DB_VERSION);
     }
 
     @Override
@@ -26,13 +30,21 @@ public class DBManager extends SQLiteOpenHelper {
                 "create table person " +
                         "(name text, face blob, templates blob)"
         );
+
+        db.execSQL(
+                "create table attendance " +
+                        "(id integer primary key autoincrement, name text, timestamp integer)"
+        );
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // TODO Auto-generated method stub
-        db.execSQL("DROP TABLE IF EXISTS person");
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL(
+                    "create table if not exists attendance " +
+                            "(id integer primary key autoincrement, name text, timestamp integer)"
+            );
+        }
     }
 
     public void insertPerson (String name, Bitmap face, byte[] templates) {
@@ -53,7 +65,7 @@ public class DBManager extends SQLiteOpenHelper {
 
     public Integer deletePerson (String name) {
         for(int i = 0; i < personList.size(); i ++) {
-            if(personList.get(i).name == name) {
+            if(personList.get(i).name.equals(name)) {
                 personList.remove(i);
                 i --;
             }
@@ -73,6 +85,24 @@ public class DBManager extends SQLiteOpenHelper {
         return 0;
     }
 
+    public void insertAttendance(String name, long timestamp) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues contentValues = new ContentValues();
+        contentValues.put("name", name);
+        contentValues.put("timestamp", timestamp);
+        db.insert("attendance", null, contentValues);
+
+        attendanceList.add(new AttendanceLog(name, timestamp));
+    }
+
+    public Integer clearAttendance() {
+        attendanceList.clear();
+
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.execSQL("delete from attendance");
+        return 0;
+    }
+
     public void loadPerson() {
         personList.clear();
 
@@ -88,6 +118,24 @@ public class DBManager extends SQLiteOpenHelper {
 
             Person person = new Person(name, face, templates);
             personList.add(person);
+
+            res.moveToNext();
+        }
+    }
+
+    public void loadAttendance() {
+        attendanceList.clear();
+
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor res = db.rawQuery("select * from attendance order by timestamp desc", null);
+        res.moveToFirst();
+
+        while(res.isAfterLast() == false){
+            String name = res.getString(res.getColumnIndex("name"));
+            long timestamp = res.getLong(res.getColumnIndex("timestamp"));
+
+            AttendanceLog attendanceLog = new AttendanceLog(name, timestamp);
+            attendanceList.add(attendanceLog);
 
             res.moveToNext();
         }

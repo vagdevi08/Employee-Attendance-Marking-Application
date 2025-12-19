@@ -25,5 +25,9 @@
     <string name="restored_default_settings">Restored default settings</string>
     <string name="cleared_all_person">Cleared all person</string>
     <string name="invalid_value">Invalid value</string>
+    <string name="attendance_title">Attendance Log</string>
+    <string name="attendance_clear">Clear log</string>
+    <string name="attendance_empty">No attendance yet</string>
+    <string name="attendance_marked">Attendance marked for %1$s</string>
 
 </resources>
