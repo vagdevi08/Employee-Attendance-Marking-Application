@@ -31,9 +31,16 @@ public class DBManager extends SQLiteOpenHelper {
                         "(employeeId text, name text, face blob, templates blob)"
         );
 
+        // db.execSQL(
+        //         "create table attendance " +
+        //                 "(id integer primary key autoincrement, name text, timestamp integer)"
+        // );
         db.execSQL(
-                "create table attendance " +
-                        "(id integer primary key autoincrement, name text, timestamp integer)"
+            "create table attendance (" +
+                "id integer primary key autoincrement, " +
+                "employeeId text, " +
+                "name text, " +
+                "timestamp integer)"
         );
     }
 
@@ -53,6 +60,7 @@ public class DBManager extends SQLiteOpenHelper {
                 // Column might already exist, ignore
             }
         }
+        
     }
 
     public void insertPerson (String employeeId, String name, Bitmap face, byte[] templates) {
@@ -99,14 +107,15 @@ public class DBManager extends SQLiteOpenHelper {
         return 0;
     }
 
-    public void insertAttendance(String name, long timestamp) {
+    public void insertAttendance(String employeeId, String name, long timestamp) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
+        contentValues.put("employeeId", employeeId);
         contentValues.put("name", name);
         contentValues.put("timestamp", timestamp);
         db.insert("attendance", null, contentValues);
 
-        attendanceList.add(new AttendanceLog(name, timestamp));
+        attendanceList.add(new AttendanceLog(employeeId, name, timestamp));
     }
 
     public Integer clearAttendance() {
@@ -155,10 +164,11 @@ public class DBManager extends SQLiteOpenHelper {
         res.moveToFirst();
 
         while(res.isAfterLast() == false){
+            String employeeId = res.getString(res.getColumnIndex("employeeId"));
             String name = res.getString(res.getColumnIndex("name"));
             long timestamp = res.getLong(res.getColumnIndex("timestamp"));
 
-            AttendanceLog attendanceLog = new AttendanceLog(name, timestamp);
+            AttendanceLog attendanceLog = new AttendanceLog(employeeId, name, timestamp);
             attendanceList.add(attendanceLog);
 
             res.moveToNext();

@@ -21,13 +21,21 @@ class AttendanceAdapter(
             .inflate(R.layout.item_attendance, parent, false)
 
         val attendanceLog = getItem(position)
-        val textName = rowView.findViewById<TextView>(R.id.textEmployeeName)
+        val textEmployeeInfo = rowView.findViewById<TextView>(R.id.textEmployeeInfo)
         val textTime = rowView.findViewById<TextView>(R.id.textTimestamp)
 
-        textName.text = attendanceLog?.name ?: ""
+        // Display as "ID - Name" format
+        val employeeId = attendanceLog?.employeeId?.takeIf { it.isNotEmpty() }
+        val employeeName = attendanceLog?.name ?: ""
+        
+        if (employeeId != null && employeeId.isNotEmpty()) {
+            textEmployeeInfo.text = "$employeeId - $employeeName"
+        } else {
+            textEmployeeInfo.text = employeeName
+        }
+
         textTime.text = attendanceLog?.timestamp?.let { dateFormatter.format(Date(it)) } ?: ""
 
         return rowView
     }
 }
-

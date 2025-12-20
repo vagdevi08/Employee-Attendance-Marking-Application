@@ -248,6 +248,7 @@ public class CameraActivity extends AppCompatActivity {
                                 intent.putExtra("identified_face", faceImage);
                                 intent.putExtra("enrolled_face", identifiedPerson.face);
                                 intent.putExtra("identified_name", identifiedPerson.name);
+                                intent.putExtra("employee_id", identifiedPerson.employeeId != null ? identifiedPerson.employeeId : "");
                                 intent.putExtra("similarity", identifiedSimilarity);
                                 intent.putExtra("liveness", faceBox.liveness);
                                 intent.putExtra("yaw", faceBox.yaw);
