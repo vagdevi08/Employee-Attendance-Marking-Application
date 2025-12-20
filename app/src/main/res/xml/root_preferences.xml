@@ -43,6 +43,35 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        app:title="Attendance Time Windows">
+
+        <EditTextPreference
+            app:defaultValue="08:00"
+            app:key="check_in_start_time"
+            app:title="Check-in Start Time (HH:mm)"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:defaultValue="10:00"
+            app:key="check_in_end_time"
+            app:title="Check-in End Time (HH:mm)"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:defaultValue="16:00"
+            app:key="check_out_start_time"
+            app:title="Check-out Start Time (HH:mm)"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:defaultValue="18:00"
+            app:key="check_out_end_time"
+            app:title="Check-out End Time (HH:mm)"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         app:icon="@drawable/ic_reset"
         app:title="@string/reset">
 

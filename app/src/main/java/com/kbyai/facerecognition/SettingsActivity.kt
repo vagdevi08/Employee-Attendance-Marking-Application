@@ -15,6 +15,10 @@ class SettingsActivity : AppCompatActivity() {
         const val DEFAULT_LIVENESS_THRESHOLD = "0.7"
         const val DEFAULT_IDENTIFY_THRESHOLD = "0.8"
         const val DEFAULT_LIVENESS_LEVEL = "0"
+        const val DEFAULT_CHECK_IN_START = "08:00"
+        const val DEFAULT_CHECK_IN_END = "10:00"
+        const val DEFAULT_CHECK_OUT_START = "16:00"
+        const val DEFAULT_CHECK_OUT_END = "18:00"
 
         @JvmStatic
         fun getLivenessThreshold(context: Context): Float {
@@ -48,6 +52,49 @@ class SettingsActivity : AppCompatActivity() {
             } else {
                 return 1
             }
+        }
+
+        @JvmStatic
+        fun getCheckInStartTime(context: Context): String {
+            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            return sharedPreferences.getString("check_in_start_time", DEFAULT_CHECK_IN_START) ?: DEFAULT_CHECK_IN_START
+        }
+
+        @JvmStatic
+        fun getCheckInEndTime(context: Context): String {
+            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            return sharedPreferences.getString("check_in_end_time", DEFAULT_CHECK_IN_END) ?: DEFAULT_CHECK_IN_END
+        }
+
+        @JvmStatic
+        fun getCheckOutStartTime(context: Context): String {
+            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            return sharedPreferences.getString("check_out_start_time", DEFAULT_CHECK_OUT_START) ?: DEFAULT_CHECK_OUT_START
+        }
+
+        @JvmStatic
+        fun getCheckOutEndTime(context: Context): String {
+            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            return sharedPreferences.getString("check_out_end_time", DEFAULT_CHECK_OUT_END) ?: DEFAULT_CHECK_OUT_END
+        }
+
+        @JvmStatic
+        fun isTimeInWindow(currentTime: java.util.Calendar, windowStart: String, windowEnd: String): Boolean {
+            val startParts = windowStart.split(":")
+            val endParts = windowEnd.split(":")
+            val startHour = startParts[0].toInt()
+            val startMinute = startParts[1].toInt()
+            val endHour = endParts[0].toInt()
+            val endMinute = endParts[1].toInt()
+            
+            val currentHour = currentTime.get(java.util.Calendar.HOUR_OF_DAY)
+            val currentMinute = currentTime.get(java.util.Calendar.MINUTE)
+            
+            val currentMinutes = currentHour * 60 + currentMinute
+            val startMinutes = startHour * 60 + startMinute
+            val endMinutes = endHour * 60 + endMinute
+            
+            return currentMinutes >= startMinutes && currentMinutes <= endMinutes
         }
     }
 

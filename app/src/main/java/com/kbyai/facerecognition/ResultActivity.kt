@@ -145,12 +145,47 @@ class ResultActivity : AppCompatActivity() {
         // ----- ATTENDANCE -----
         val attendanceTime = System.currentTimeMillis()
 
-        if (!identifiedName.isNullOrEmpty()) {
+        if (!identifiedName.isNullOrEmpty() && !employeeId.isEmpty()) {
+            val attendanceType = AttendanceHelper.determineAttendanceType(this, employeeId, attendanceTime)
+            
+            if (attendanceType != "NONE") {
+                dbManager.insertAttendance(
+                    employeeId,
+                    identifiedName,
+                    attendanceTime,
+                    attendanceType
+                )
 
+                val formatter =
+                    SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault())
+                
+                val typeText = if (attendanceType == "CHECK_IN") "Check-in" else "Check-out"
+
+                findViewById<TextView>(R.id.textAttendanceTime).text =
+                    "$typeText marked: ${formatter.format(Date(attendanceTime))}"
+
+                Toast.makeText(
+                    this,
+                    "$typeText successful for $identifiedName",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                val message = AttendanceHelper.getAttendanceTypeMessage(this, employeeId, attendanceTime)
+                findViewById<TextView>(R.id.textAttendanceTime).text = message
+                Toast.makeText(
+                    this,
+                    message,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } else if (!identifiedName.isNullOrEmpty()) {
+            // Fallback for employees without ID
+            val attendanceType = "CHECK_IN"
             dbManager.insertAttendance(
-                employeeId,
+                "",
                 identifiedName,
-                attendanceTime
+                attendanceTime,
+                attendanceType
             )
 
             val formatter =

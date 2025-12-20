@@ -24,14 +24,16 @@ class AttendanceAdapter(
         val textEmployeeInfo = rowView.findViewById<TextView>(R.id.textEmployeeInfo)
         val textTime = rowView.findViewById<TextView>(R.id.textTimestamp)
 
-        // Display as "ID - Name" format
+        // Display as "ID - Name [Type]" format
         val employeeId = attendanceLog?.employeeId?.takeIf { it.isNotEmpty() }
         val employeeName = attendanceLog?.name ?: ""
+        val attendanceType = attendanceLog?.type ?: "CHECK_IN"
+        val typeText = if (attendanceType == "CHECK_IN") " [IN]" else " [OUT]"
         
         if (employeeId != null && employeeId.isNotEmpty()) {
-            textEmployeeInfo.text = "$employeeId - $employeeName"
+            textEmployeeInfo.text = "$employeeId - $employeeName$typeText"
         } else {
-            textEmployeeInfo.text = employeeName
+            textEmployeeInfo.text = "$employeeName$typeText"
         }
 
         textTime.text = attendanceLog?.timestamp?.let { dateFormatter.format(Date(it)) } ?: ""

@@ -17,7 +17,7 @@ public class DBManager extends SQLiteOpenHelper {
     public static ArrayList<AttendanceLog> attendanceList = new ArrayList<>();
 
     private static final String DB_NAME = "mydb";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     public DBManager(Context context) {
         super(context, DB_NAME , null, DB_VERSION);
@@ -40,7 +40,8 @@ public class DBManager extends SQLiteOpenHelper {
                 "id integer primary key autoincrement, " +
                 "employeeId text, " +
                 "name text, " +
-                "timestamp integer)"
+                "timestamp integer, " +
+                "type text DEFAULT 'CHECK_IN')"
         );
     }
 
@@ -60,7 +61,14 @@ public class DBManager extends SQLiteOpenHelper {
                 // Column might already exist, ignore
             }
         }
-        
+        if (oldVersion < 4) {
+            // Add type column to attendance table
+            try {
+                db.execSQL("ALTER TABLE attendance ADD COLUMN type text DEFAULT 'CHECK_IN'");
+            } catch (Exception e) {
+                // Column might already exist, ignore
+            }
+        }
     }
 
     public void insertPerson (String employeeId, String name, Bitmap face, byte[] templates) {
@@ -107,15 +115,64 @@ public class DBManager extends SQLiteOpenHelper {
         return 0;
     }
 
-    public void insertAttendance(String employeeId, String name, long timestamp) {
+    public void insertAttendance(String employeeId, String name, long timestamp, String type) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
         contentValues.put("employeeId", employeeId);
         contentValues.put("name", name);
         contentValues.put("timestamp", timestamp);
+        contentValues.put("type", type);
         db.insert("attendance", null, contentValues);
 
-        attendanceList.add(new AttendanceLog(employeeId, name, timestamp));
+        attendanceList.add(new AttendanceLog(employeeId, name, timestamp, type));
+    }
+
+    // Legacy method for backward compatibility
+    public void insertAttendance(String employeeId, String name, long timestamp) {
+        insertAttendance(employeeId, name, timestamp, "CHECK_IN");
+    }
+
+    public AttendanceLog getLastAttendanceToday(String employeeId, long currentTime) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTimeInMillis(currentTime);
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        cal.set(java.util.Calendar.MINUTE, 0);
+        cal.set(java.util.Calendar.SECOND, 0);
+        cal.set(java.util.Calendar.MILLISECOND, 0);
+        long startOfDay = cal.getTimeInMillis();
+        
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 23);
+        cal.set(java.util.Calendar.MINUTE, 59);
+        cal.set(java.util.Calendar.SECOND, 59);
+        cal.set(java.util.Calendar.MILLISECOND, 999);
+        long endOfDay = cal.getTimeInMillis();
+        
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor res = db.rawQuery(
+            "select * from attendance where employeeId = ? and timestamp >= ? and timestamp <= ? order by timestamp desc limit 1",
+            new String[] { employeeId, String.valueOf(startOfDay), String.valueOf(endOfDay) }
+        );
+        
+        AttendanceLog lastLog = null;
+        if (res.moveToFirst()) {
+            String name = res.getString(res.getColumnIndex("name"));
+            long timestamp = res.getLong(res.getColumnIndex("timestamp"));
+            String type = "CHECK_IN";
+            try {
+                int typeIndex = res.getColumnIndex("type");
+                if (typeIndex >= 0) {
+                    String typeValue = res.getString(typeIndex);
+                    if (typeValue != null) {
+                        type = typeValue;
+                    }
+                }
+            } catch (Exception e) {
+                // Column doesn't exist in old database
+            }
+            lastLog = new AttendanceLog(employeeId, name, timestamp, type);
+        }
+        res.close();
+        return lastLog;
     }
 
     public Integer clearAttendance() {
@@ -167,8 +224,20 @@ public class DBManager extends SQLiteOpenHelper {
             String employeeId = res.getString(res.getColumnIndex("employeeId"));
             String name = res.getString(res.getColumnIndex("name"));
             long timestamp = res.getLong(res.getColumnIndex("timestamp"));
+            String type = "CHECK_IN";
+            try {
+                int typeIndex = res.getColumnIndex("type");
+                if (typeIndex >= 0) {
+                    String typeValue = res.getString(typeIndex);
+                    if (typeValue != null) {
+                        type = typeValue;
+                    }
+                }
+            } catch (Exception e) {
+                // Column doesn't exist in old database
+            }
 
-            AttendanceLog attendanceLog = new AttendanceLog(employeeId, name, timestamp);
+            AttendanceLog attendanceLog = new AttendanceLog(employeeId, name, timestamp, type);
             attendanceList.add(attendanceLog);
 
             res.moveToNext();
