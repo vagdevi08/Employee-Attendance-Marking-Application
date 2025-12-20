@@ -3,6 +3,8 @@ package com.kbyai.facerecognition
 import android.graphics.Bitmap
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -12,6 +14,9 @@ import java.util.*
 class ResultActivity : AppCompatActivity() {
 
     private lateinit var dbManager: DBManager
+    private val AUTO_RETURN_DELAY_MS = 3000L // 3 seconds delay before auto-return
+    private var handler: Handler? = null
+    private var autoReturnRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,5 +53,24 @@ class ResultActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.textYaw).text = "Yaw: " + yaw
         findViewById<TextView>(R.id.textRoll).text = "Roll: " + roll
         findViewById<TextView>(R.id.textPitch).text = "Pitch: " + pitch
+
+        // Automatically return to previous activity after delay
+        handler = Handler(Looper.getMainLooper())
+        autoReturnRunnable = Runnable {
+            finish()
+        }
+        handler?.postDelayed(autoReturnRunnable!!, AUTO_RETURN_DELAY_MS)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up handler to prevent memory leaks
+        autoReturnRunnable?.let { handler?.removeCallbacks(it) }
+    }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
+        // Cancel auto-return if user manually goes back
+        autoReturnRunnable?.let { handler?.removeCallbacks(it) }
     }
 }
