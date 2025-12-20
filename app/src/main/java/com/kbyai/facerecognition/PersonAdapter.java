@@ -38,7 +38,12 @@ public class PersonAdapter extends ArrayAdapter<Person> {
             }
         });
 
-        tvName.setText(person.name);
+        // Display employee ID and name
+        if (person.employeeId != null && !person.employeeId.isEmpty()) {
+            tvName.setText(person.employeeId + " - " + person.name);
+        } else {
+            tvName.setText(person.name);
+        }
         faceView.setImageBitmap(person.face);
         // Return the completed view to render on screen
         return convertView;

@@ -17,7 +17,7 @@ public class DBManager extends SQLiteOpenHelper {
     public static ArrayList<AttendanceLog> attendanceList = new ArrayList<>();
 
     private static final String DB_NAME = "mydb";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     public DBManager(Context context) {
         super(context, DB_NAME , null, DB_VERSION);
@@ -28,7 +28,7 @@ public class DBManager extends SQLiteOpenHelper {
         // TODO Auto-generated method stub
         db.execSQL(
                 "create table person " +
-                        "(name text, face blob, templates blob)"
+                        "(employeeId text, name text, face blob, templates blob)"
         );
 
         db.execSQL(
@@ -45,9 +45,17 @@ public class DBManager extends SQLiteOpenHelper {
                             "(id integer primary key autoincrement, name text, timestamp integer)"
             );
         }
+        if (oldVersion < 3) {
+            // Add employeeId column to person table
+            try {
+                db.execSQL("ALTER TABLE person ADD COLUMN employeeId text DEFAULT ''");
+            } catch (Exception e) {
+                // Column might already exist, ignore
+            }
+        }
     }
 
-    public void insertPerson (String name, Bitmap face, byte[] templates) {
+    public void insertPerson (String employeeId, String name, Bitmap face, byte[] templates) {
 
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         face.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
@@ -55,12 +63,18 @@ public class DBManager extends SQLiteOpenHelper {
 
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
+        contentValues.put("employeeId", employeeId);
         contentValues.put("name", name);
         contentValues.put("face", faceJpg);
         contentValues.put("templates", templates);
         db.insert("person", null, contentValues);
 
-        personList.add(new Person(name, face, templates));
+        personList.add(new Person(employeeId, name, face, templates));
+    }
+
+    // Legacy method for backward compatibility
+    public void insertPerson (String name, Bitmap face, byte[] templates) {
+        insertPerson("", name, face, templates);
     }
 
     public Integer deletePerson (String name) {
@@ -111,12 +125,22 @@ public class DBManager extends SQLiteOpenHelper {
         res.moveToFirst();
 
         while(res.isAfterLast() == false){
+            String employeeId = "";
+            try {
+                int employeeIdIndex = res.getColumnIndex("employeeId");
+                if (employeeIdIndex >= 0) {
+                    employeeId = res.getString(employeeIdIndex);
+                    if (employeeId == null) employeeId = "";
+                }
+            } catch (Exception e) {
+                // Column doesn't exist in old database, use empty string
+            }
             String name = res.getString(res.getColumnIndex("name"));
             byte[] faceJpg = res.getBlob(res.getColumnIndex("face"));
             byte[] templates = res.getBlob(res.getColumnIndex("templates"));
             Bitmap face = BitmapFactory.decodeByteArray(faceJpg, 0, faceJpg.length);
 
-            Person person = new Person(name, face, templates);
+            Person person = new Person(employeeId, name, face, templates);
             personList.add(person);
 
             res.moveToNext();

@@ -113,15 +113,61 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     val faceImage = Utils.cropFace(bitmap, faceBoxes[0])
                     val templates = FaceSDK.templateExtraction(bitmap, faceBoxes[0])
-
-                    dbManager.insertPerson("Person" + Random.nextInt(10000, 20000), faceImage, templates)
-                    personAdapter.notifyDataSetChanged()
-                    Toast.makeText(this, getString(R.string.person_enrolled), Toast.LENGTH_SHORT).show()
+                    
+                    // Show enrollment dialog to get employee ID and name
+                    showEnrollmentDialog(faceImage, templates)
                 }
             } catch (e: java.lang.Exception) {
                 //handle exception
                 e.printStackTrace()
             }
         }
+    }
+
+    private fun showEnrollmentDialog(faceImage: Bitmap, templates: ByteArray) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_enroll_employee, null)
+        val editEmployeeId = dialogView.findViewById<EditText>(R.id.editEmployeeId)
+        val editEmployeeName = dialogView.findViewById<EditText>(R.id.editEmployeeName)
+        val buttonCancel = dialogView.findViewById<Button>(R.id.buttonCancel)
+        val buttonEnroll = dialogView.findViewById<Button>(R.id.buttonEnroll)
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+
+        buttonCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        buttonEnroll.setOnClickListener {
+            val employeeId = editEmployeeId.text.toString().trim()
+            val employeeName = editEmployeeName.text.toString().trim()
+
+            if (employeeId.isEmpty()) {
+                Toast.makeText(this, "Please enter Employee ID", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (employeeName.isEmpty()) {
+                Toast.makeText(this, "Please enter Employee Name", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Check if employee ID already exists
+            val existingPerson = DBManager.personList.find { it.employeeId == employeeId }
+            if (existingPerson != null) {
+                Toast.makeText(this, "Employee ID already exists!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Enroll the employee
+            dbManager.insertPerson(employeeId, employeeName, faceImage, templates)
+            personAdapter.notifyDataSetChanged()
+            Toast.makeText(this, "Employee enrolled successfully!", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 }
