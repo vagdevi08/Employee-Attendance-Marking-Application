@@ -87,6 +87,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.text.SimpleDateFormat
 import java.util.*
+import java.time.Instant
+import java.time.ZoneOffset
 
 class ResultActivity : AppCompatActivity() {
 
@@ -155,6 +157,16 @@ class ResultActivity : AppCompatActivity() {
                     attendanceTime,
                     attendanceType
                 )
+
+                // Send to Supabase
+                val isoUtc = Instant.ofEpochMilli(attendanceTime).atOffset(ZoneOffset.UTC).toInstant().toString()
+                val payload = SupabaseAttendance(
+                    employee_id = employeeId,
+                    name = identifiedName,
+                    timestamp = isoUtc,
+                    type = attendanceType
+                )
+                SupabaseClient.postAttendance(payload)
 
                 val formatter =
                     SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault())
