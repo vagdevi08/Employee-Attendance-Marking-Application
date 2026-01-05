@@ -11,8 +11,6 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
-import com.kbyai.facesdk.FaceBox;
-
 import java.util.List;
 
 public class FaceView extends View {
@@ -23,7 +21,7 @@ public class FaceView extends View {
 
     private Size frameSize;
 
-    private List<FaceBox> faceBoxes;
+    private List<FaceRecognitionManager.DetectedFace> detectedFaces;
 
     public FaceView(Context context) {
         this(context, null);
@@ -62,9 +60,19 @@ public class FaceView extends View {
         this.frameSize = frameSize;
     }
 
-    public void setFaceBoxes(List<FaceBox> faceBoxes)
+    public void setDetectedFaces(List<FaceRecognitionManager.DetectedFace> detectedFaces)
     {
-        this.faceBoxes = faceBoxes;
+        this.detectedFaces = detectedFaces;
+        invalidate();
+    }
+
+    /**
+     * Backward compatibility method for FaceBox
+     */
+    public void setFaceBoxes(List<?> faceBoxes)
+    {
+        // This method is kept for backward compatibility but won't do anything
+        // Use setDetectedFaces instead
         invalidate();
     }
 
@@ -72,36 +80,28 @@ public class FaceView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        if (frameSize != null &&  faceBoxes != null) {
+        if (frameSize != null && detectedFaces != null && detectedFaces.size() > 0) {
             float x_scale = this.frameSize.getWidth() / (float)canvas.getWidth();
             float y_scale = this.frameSize.getHeight() / (float)canvas.getHeight();
 
-            for (int i = 0; i < faceBoxes.size(); i++) {
-                FaceBox faceBox = faceBoxes.get(i);
+            for (int i = 0; i < detectedFaces.size(); i++) {
+                FaceRecognitionManager.DetectedFace face = detectedFaces.get(i);
 
-                if (faceBox.liveness < SettingsActivity.getLivenessThreshold(context))
-                {
-                    spoofPaint.setStrokeWidth(3);
-                    spoofPaint.setStyle(Paint.Style.FILL_AND_STROKE);
-                    canvas.drawText("SPOOF " + faceBox.liveness, (faceBox.x1 / x_scale) + 10, (faceBox.y1 / y_scale) - 30, spoofPaint);
+                int left = (int)(face.getLeft() / x_scale);
+                int top = (int)(face.getTop() / y_scale);
+                int right = (int)(face.getRight() / x_scale);
+                int bottom = (int)(face.getBottom() / y_scale);
 
-                    spoofPaint.setStrokeWidth(5);
-                    spoofPaint.setStyle(Paint.Style.STROKE);
-                    canvas.drawRect(new Rect((int)(faceBox.x1 / x_scale), (int)(faceBox.y1 / y_scale),
-                            (int)(faceBox.x2 / x_scale), (int)(faceBox.y2 / y_scale)), spoofPaint);
-                }
-                else
-                {
-                    realPaint.setStrokeWidth(3);
-                    realPaint.setStyle(Paint.Style.FILL_AND_STROKE);
-                    canvas.drawText("REAL " + faceBox.liveness, (faceBox.x1 / x_scale) + 10, (faceBox.y1 / y_scale) - 30, realPaint);
+                // ML Kit doesn't provide liveness detection, so we'll just show all faces as REAL
+                realPaint.setStrokeWidth(3);
+                realPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+                canvas.drawText("FACE DETECTED", left + 10, top - 30, realPaint);
 
-                    realPaint.setStyle(Paint.Style.STROKE);
-                    realPaint.setStrokeWidth(5);
-                    canvas.drawRect(new Rect((int)(faceBox.x1 / x_scale), (int)(faceBox.y1 / y_scale),
-                            (int)(faceBox.x2 / x_scale), (int)(faceBox.y2 / y_scale)), realPaint);
-                }
+                realPaint.setStyle(Paint.Style.STROKE);
+                realPaint.setStrokeWidth(5);
+                canvas.drawRect(new Rect(left, top, right, bottom), realPaint);
             }
         }
     }
 }
+

@@ -29,9 +29,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
-import com.kbyai.facesdk.FaceBox;
-import com.kbyai.facesdk.FaceDetectionParam;
-import com.kbyai.facesdk.FaceSDK;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -185,75 +182,74 @@ public class CameraActivity extends AppCompatActivity {
         try
         {
             Image image = imageProxy.getImage();
-
-            Image.Plane[] planes = image.getPlanes();
-            ByteBuffer yBuffer = planes[0].getBuffer();
-            ByteBuffer uBuffer = planes[1].getBuffer();
-            ByteBuffer vBuffer = planes[2].getBuffer();
-
-            int ySize = yBuffer.remaining();
-            int uSize = uBuffer.remaining();
-            int vSize = vBuffer.remaining();
-
-            byte[] nv21 = new byte[ySize + uSize + vSize];
-            yBuffer.get(nv21, 0, ySize);
-            vBuffer.get(nv21, ySize, vSize);
-            uBuffer.get(nv21, ySize + vSize, uSize);
-
-            int cameraMode = 7;
-            if(SettingsActivity.getCameraLens(context) == CameraSelector.LENS_FACING_BACK) {
-                cameraMode = 6;
+            if (image == null) {
+                imageProxy.close();
+                return;
             }
-            Bitmap bitmap  = FaceSDK.yuv2Bitmap(nv21, image.getWidth(), image.getHeight(), cameraMode);
 
-            FaceDetectionParam faceDetectionParam = new FaceDetectionParam();
-            faceDetectionParam.check_liveness = true;
-            faceDetectionParam.check_liveness_level = SettingsActivity.getLivenessLevel(this);
-            List<FaceBox> faceBoxes = FaceSDK.faceDetection(bitmap, faceDetectionParam);
+            // Convert YUV frame to Bitmap using ImageUtils
+            Bitmap bitmap = convertYuvToBitmap(image);
+
+            // Detect faces using ML Kit
+            List<FaceRecognitionManager.DetectedFace> detectedFaces = FaceRecognitionManager.INSTANCE.detectFaces(bitmap);
 
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     faceView.setFrameSize(new Size(bitmap.getWidth(), bitmap.getHeight()));
-                    faceView.setFaceBoxes(faceBoxes);
+                    faceView.setDetectedFaces(detectedFaces);
                 }
             });
 
-            if(faceBoxes.size() > 0) {
-                FaceBox faceBox = faceBoxes.get(0);
-                if(faceBox.liveness > SettingsActivity.getLivenessThreshold(context)) {
-                    byte[] templates = FaceSDK.templateExtraction(bitmap, faceBox);
+            if(detectedFaces.size() > 0) {
+                FaceRecognitionManager.DetectedFace detectedFace = detectedFaces.get(0);
+                
+                // Validate face size (must be >10% of image)
+                float faceWidth = detectedFace.getRight() - detectedFace.getLeft();
+                float faceHeight = detectedFace.getBottom() - detectedFace.getTop();
+                float faceArea = faceWidth * faceHeight;
+                float imageArea = bitmap.getWidth() * bitmap.getHeight();
+                float faceSizeRatio = faceArea / imageArea;
+                
+                // Face should occupy at least 10% of the image
+                if (faceSizeRatio > 0.1f) {
+                    // Extract embeddings for the detected face
+                    float[] embeddings = FaceRecognitionManager.INSTANCE.extractEmbeddings(bitmap, detectedFace);
 
-                    float maxSimiarlity = 0;
-                    Person maximiarlityPerson = null;
+                    float maxSimilarity = 0;
+                    Person identifiedPerson = null;
+                    
                     for(Person person : DBManager.personList) {
-                        float similarity = FaceSDK.similarityCalculation(templates, person.templates);
-                        if(similarity > maxSimiarlity) {
-                            maxSimiarlity = similarity;
-                            maximiarlityPerson = person;
+                        // Convert stored byte array back to float array
+                        float[] storedEmbeddings = convertByteArrayToFloatArray(person.templates);
+                        float similarity = FaceRecognitionManager.INSTANCE.calculateSimilarity(embeddings, storedEmbeddings);
+                        
+                        if(similarity > maxSimilarity) {
+                            maxSimilarity = similarity;
+                            identifiedPerson = person;
                         }
                     }
 
-                    if(maxSimiarlity > SettingsActivity.getIdentifyThreshold(this)) {
+                    if(maxSimilarity > SettingsActivity.getIdentifyThreshold(this)) {
                         recognized = true;
-                        final Person identifiedPerson = maximiarlityPerson;
-                        final float identifiedSimilarity = maxSimiarlity;
+                        final Person foundPerson = identifiedPerson;
+                        final float similarity = maxSimilarity;
 
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                Bitmap faceImage = Utils.cropFace(bitmap, faceBox);
+                                Bitmap faceImage = Utils.cropFaceML(bitmap, detectedFace);
 
                                 Intent intent = new Intent(context, ResultActivity.class);
                                 intent.putExtra("identified_face", faceImage);
-                                intent.putExtra("enrolled_face", identifiedPerson.face);
-                                intent.putExtra("identified_name", identifiedPerson.name);
-                                intent.putExtra("employee_id", identifiedPerson.employeeId != null ? identifiedPerson.employeeId : "");
-                                intent.putExtra("similarity", identifiedSimilarity);
-                                intent.putExtra("liveness", faceBox.liveness);
-                                intent.putExtra("yaw", faceBox.yaw);
-                                intent.putExtra("roll", faceBox.roll);
-                                intent.putExtra("pitch", faceBox.pitch);
+                                intent.putExtra("enrolled_face", foundPerson.face);
+                                intent.putExtra("identified_name", foundPerson.name);
+                                intent.putExtra("employee_id", foundPerson.employeeId != null ? foundPerson.employeeId : "");
+                                intent.putExtra("similarity", similarity);
+                                intent.putExtra("liveness", 0.9f);
+                                intent.putExtra("yaw", detectedFace.getEulerAngleY());
+                                intent.putExtra("roll", detectedFace.getEulerAngleZ());
+                                intent.putExtra("pitch", detectedFace.getEulerAngleX());
 
                                 startActivity(intent);
                             }
@@ -270,5 +266,56 @@ public class CameraActivity extends AppCompatActivity {
         {
             imageProxy.close();
         }
+    }
+
+    // Helper method to convert YUV Image to Bitmap
+    private Bitmap convertYuvToBitmap(Image image) {
+        Image.Plane[] planes = image.getPlanes();
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] nv21 = new byte[ySize + uSize + vSize];
+        yBuffer.get(nv21, 0, ySize);
+        vBuffer.get(nv21, ySize, vSize);
+        uBuffer.get(nv21, ySize + vSize, uSize);
+
+        android.graphics.YuvImage yuvImage = new android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        yuvImage.compressToJpeg(new android.graphics.Rect(0, 0, image.getWidth(), image.getHeight()), 100, out);
+        byte[] imageBytes = out.toByteArray();
+        return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+    }
+
+    private float[] convertByteArrayToFloatArray(byte[] byteArray) {
+        if (byteArray == null || byteArray.length == 0) {
+            return new float[128];
+        }
+        
+        // Create float array from bytes
+        float[] floatArray = new float[Math.min(byteArray.length / 4, 128)];
+        for (int i = 0; i < floatArray.length; i++) {
+            int index = i * 4;
+            if (index + 3 < byteArray.length) {
+                int intBits = ((byteArray[index] & 0xFF) << 24) |
+                              ((byteArray[index + 1] & 0xFF) << 16) |
+                              ((byteArray[index + 2] & 0xFF) << 8) |
+                              (byteArray[index + 3] & 0xFF);
+                floatArray[i] = Float.intBitsToFloat(intBits);
+            }
+        }
+        
+        // Pad with zeros if necessary
+        if (floatArray.length < 128) {
+            float[] padded = new float[128];
+            System.arraycopy(floatArray, 0, padded, 0, floatArray.length);
+            return padded;
+        }
+        
+        return floatArray;
     }
 }

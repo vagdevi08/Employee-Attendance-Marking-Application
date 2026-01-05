@@ -60,7 +60,8 @@ dependencies {
 //    implementation 'io.fotoapparat:fotoapparat:2.7.0'
     implementation project(path: ':libfotoapparat')
 
-    implementation project(path: ':libfacesdk')
+    // Google ML Kit for Face Detection
+    implementation 'com.google.mlkit:face-detection:16.1.6'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

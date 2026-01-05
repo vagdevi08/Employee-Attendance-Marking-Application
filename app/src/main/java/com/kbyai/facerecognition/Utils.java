@@ -9,27 +9,39 @@ import android.graphics.Rect;
 import android.net.Uri;
 import android.provider.MediaStore;
 
-import com.kbyai.facesdk.FaceBox;
-
 import java.io.IOException;
 import java.io.InputStream;
 
 public class Utils {
 
-    public static Bitmap cropFace(Bitmap src, FaceBox faceBox) {
-        int centerX = (faceBox.x1 + faceBox.x2) / 2;
-        int centerY = (faceBox.y1 + faceBox.y2) / 2;
-        int cropWidth = (int)((faceBox.x2 - faceBox.x1) * 1.4f);
+    /**
+     * Crop face using KBY-AI FaceBox (for backward compatibility if needed)
+     * Note: This is deprecated and kept for reference only
+     */
+    public static Bitmap cropFace(Bitmap src, Object faceBox) {
+        // This method is kept for backward compatibility but shouldn't be used
+        // Use cropFaceML instead
+        return src;
+    }
+
+    /**
+     * Crop face using ML Kit DetectedFace
+     */
+    public static Bitmap cropFaceML(Bitmap src, FaceRecognitionManager.DetectedFace face) {
+        int centerX = (int)((face.getLeft() + face.getRight()) / 2);
+        int centerY = (int)((face.getTop() + face.getBottom()) / 2);
+        int faceWidth = (int)(face.getRight() - face.getLeft());
+        int cropWidth = (int)(faceWidth * 1.4f);
 
         int cropX1 = centerX - cropWidth / 2;
         int cropY1 = centerY - cropWidth / 2;
         int cropX2 = centerX + cropWidth / 2;
         int cropY2 = centerY + cropWidth / 2;
-        if(cropX1 < 0) cropX1 = 0;
-        if(cropX2 >= src.getWidth()) cropX2 = src.getWidth() - 1;
-        if(cropY1 < 0) cropY1 = 0;
-        if(cropY2 >= src.getHeight()) cropY2 = src.getHeight() - 1;
 
+        if (cropX1 < 0) cropX1 = 0;
+        if (cropX2 >= src.getWidth()) cropX2 = src.getWidth() - 1;
+        if (cropY1 < 0) cropY1 = 0;
+        if (cropY2 >= src.getHeight()) cropY2 = src.getHeight() - 1;
 
         int cropScaleWidth = 200;
         int cropScaleHeight = 200;
@@ -37,11 +49,10 @@ public class Utils {
         float scaleHeight = ((float) cropScaleHeight) / (cropY2 - cropY1 + 1);
 
         final Matrix m = new Matrix();
-
         m.setScale(1.0f, 1.0f);
         m.postScale(scaleWidth, scaleHeight);
-        final Bitmap cropped = Bitmap.createBitmap(src, cropX1, cropY1, (cropX2 - cropX1 + 1), (cropY2 - cropY1 + 1), m,
-                true /* filter */);
+
+        final Bitmap cropped = Bitmap.createBitmap(src, cropX1, cropY1, (cropX2 - cropX1 + 1), (cropY2 - cropY1 + 1), m, true);
         return cropped;
     }
 

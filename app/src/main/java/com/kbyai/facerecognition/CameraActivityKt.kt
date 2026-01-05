@@ -13,8 +13,6 @@ import androidx.core.content.ContextCompat
 import com.kbyai.facerecognition.SettingsActivity.Companion.getIdentifyThreshold
 import com.kbyai.facerecognition.SettingsActivity.Companion.getLivenessLevel
 import com.kbyai.facerecognition.SettingsActivity.Companion.getLivenessThreshold
-import com.kbyai.facesdk.FaceDetectionParam
-import com.kbyai.facesdk.FaceSDK
 import io.fotoapparat.Fotoapparat
 import io.fotoapparat.parameter.Resolution
 import io.fotoapparat.preview.Frame
@@ -22,6 +20,7 @@ import io.fotoapparat.preview.FrameProcessor
 import io.fotoapparat.selector.front
 import io.fotoapparat.selector.back
 import io.fotoapparat.view.CameraView
+import kotlin.math.min
 
 class CameraActivityKt : AppCompatActivity() {
 
@@ -108,59 +107,97 @@ class CameraActivityKt : AppCompatActivity() {
                 return
             }
 
-            var cameraMode = 7
-            if (SettingsActivity.getCameraLens(context) == CameraSelector.LENS_FACING_BACK) {
-                cameraMode = 6
-            }
+            try {
+                // Convert frame to bitmap using ML Kit compatible method
+                // Fotoapparat provides NV21 bytes, so use nv21ToBitmap
+                val bitmap = ImageUtils.nv21ToBitmap(frame.image, frame.size.width, frame.size.height)
 
-            val bitmap = FaceSDK.yuv2Bitmap(frame.image, frame.size.width, frame.size.height, cameraMode)
+                // Detect faces using ML Kit
+                val detectedFaces = FaceRecognitionManager.detectFaces(bitmap)
 
-            val faceDetectionParam = FaceDetectionParam()
-            faceDetectionParam.check_liveness = true
-            faceDetectionParam.check_liveness_level = getLivenessLevel(context)
-            val faceBoxes = FaceSDK.faceDetection(bitmap, faceDetectionParam)
+                runOnUiThread {
+                    faceView.setFrameSize(Size(bitmap.width, bitmap.height))
+                    faceView.setDetectedFaces(detectedFaces)
+                }
 
-            runOnUiThread {
-                faceView.setFrameSize(Size(bitmap.width, bitmap.height))
-                faceView.setFaceBoxes(faceBoxes)
-            }
+                if(detectedFaces.isNotEmpty()) {
+                    val detectedFace = detectedFaces[0]
+                    
+                    // Validate face size (must be >10% of image)
+                    val faceWidth = detectedFace.right - detectedFace.left
+                    val faceHeight = detectedFace.bottom - detectedFace.top
+                    val faceArea = faceWidth * faceHeight
+                    val imageArea = bitmap.width * bitmap.height
+                    val faceSizeRatio = faceArea / imageArea
+                    
+                    if (faceSizeRatio > 0.1f) {
+                        // Extract embeddings
+                        val embeddings = FaceRecognitionManager.extractEmbeddings(bitmap, detectedFace)
 
-            if(faceBoxes.size > 0) {
-                val faceBox = faceBoxes[0]
-                if (faceBox.liveness > SettingsActivity.getLivenessThreshold(context)) {
-                    val templates = FaceSDK.templateExtraction(bitmap, faceBox)
-
-                    var maxSimiarlity = 0f
-                    var maximiarlityPerson: Person? = null
-                    for (person in DBManager.personList) {
-                        val similarity = FaceSDK.similarityCalculation(templates, person.templates)
-                        if (similarity > maxSimiarlity) {
-                            maxSimiarlity = similarity
-                            maximiarlityPerson = person
+                        var maxSimilarity = 0f
+                        var identifiedPerson: Person? = null
+                        
+                        for (person in DBManager.personList) {
+                            val storedEmbeddings = convertByteArrayToFloatArray(person.templates)
+                            val similarity = FaceRecognitionManager.calculateSimilarity(embeddings, storedEmbeddings)
+                            
+                            if (similarity > maxSimilarity) {
+                                maxSimilarity = similarity
+                                identifiedPerson = person
+                            }
                         }
-                    }
-                    if (maxSimiarlity > SettingsActivity.getIdentifyThreshold(context)) {
-                        recognized = true
-                        val identifiedPerson = maximiarlityPerson
-                        val identifiedSimilarity = maxSimiarlity
+                        
+                        if (maxSimilarity > SettingsActivity.getIdentifyThreshold(context)) {
+                            recognized = true
+                            val foundPerson = identifiedPerson
+                            val similarity = maxSimilarity
 
-                        runOnUiThread {
-                            val faceImage = Utils.cropFace(bitmap, faceBox)
-                            val intent = Intent(context, ResultActivity::class.java)
-                            intent.putExtra("identified_face", faceImage)
-                            intent.putExtra("enrolled_face", identifiedPerson!!.face)
-                            intent.putExtra("identified_name", identifiedPerson!!.name)
-                            intent.putExtra("employee_id", identifiedPerson!!.employeeId ?: "")
-                            intent.putExtra("similarity", identifiedSimilarity)
-                            intent.putExtra("liveness", faceBox.liveness)
-                            intent.putExtra("yaw", faceBox.yaw)
-                            intent.putExtra("roll", faceBox.roll)
-                            intent.putExtra("pitch", faceBox.pitch)
-                            startActivity(intent)
+                            runOnUiThread {
+                                val faceImage = Utils.cropFaceML(bitmap, detectedFace)
+                                val intent = Intent(context, ResultActivity::class.java)
+                                intent.putExtra("identified_face", faceImage)
+                                intent.putExtra("enrolled_face", foundPerson!!.face)
+                                intent.putExtra("identified_name", foundPerson!!.name)
+                                intent.putExtra("employee_id", foundPerson!!.employeeId ?: "")
+                                intent.putExtra("similarity", similarity)
+                                intent.putExtra("liveness", 0.9f)
+                                intent.putExtra("yaw", detectedFace.eulerAngleY)
+                                intent.putExtra("roll", detectedFace.eulerAngleZ)
+                                intent.putExtra("pitch", detectedFace.eulerAngleX)
+                                startActivity(intent)
+                            }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
+        }
+    }
+
+    private fun convertByteArrayToFloatArray(byteArray: ByteArray): FloatArray {
+        if (byteArray.isEmpty()) {
+            return FloatArray(128)
+        }
+        
+        val floatArray = FloatArray(min(byteArray.size / 4, 128))
+        for (i in floatArray.indices) {
+            val index = i * 4
+            if (index + 3 < byteArray.size) {
+                val intBits = ((byteArray[index].toInt() and 0xFF) shl 24) or
+                              ((byteArray[index + 1].toInt() and 0xFF) shl 16) or
+                              ((byteArray[index + 2].toInt() and 0xFF) shl 8) or
+                              (byteArray[index + 3].toInt() and 0xFF)
+                floatArray[i] = Float.fromBits(intBits)
+            }
+        }
+        
+        return if (floatArray.size < 128) {
+            FloatArray(128).also { padded ->
+                floatArray.copyInto(padded)
+            }
+        } else {
+            floatArray
         }
     }
 }

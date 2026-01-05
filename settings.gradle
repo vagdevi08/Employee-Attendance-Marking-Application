@@ -16,5 +16,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "FaceRecognition"
 include ':app'
-include ':libfacesdk'
 include ':libfotoapparat'
