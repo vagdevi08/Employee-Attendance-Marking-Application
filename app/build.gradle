@@ -60,6 +60,9 @@ dependencies {
 //    implementation 'io.fotoapparat:fotoapparat:2.7.0'
     implementation project(path: ':libfotoapparat')
 
+    // Face detection overlay from android-face-detector
+    implementation 'com.github.husaynhakeem:android-face-detector:2.0'
+
     // Google ML Kit for Face Detection
     implementation 'com.google.mlkit:face-detection:16.1.6'
 

@@ -158,16 +158,6 @@ class ResultActivity : AppCompatActivity() {
                     attendanceType
                 )
 
-                // Send to Supabase
-                val isoUtc = Instant.ofEpochMilli(attendanceTime).atOffset(ZoneOffset.UTC).toInstant().toString()
-                val payload = SupabaseAttendance(
-                    employee_id = employeeId,
-                    name = identifiedName,
-                    timestamp = isoUtc,
-                    type = attendanceType
-                )
-                SupabaseClient.postAttendance(payload)
-
                 val formatter =
                     SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault())
                 

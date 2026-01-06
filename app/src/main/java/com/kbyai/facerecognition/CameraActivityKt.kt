@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Size
 import androidx.appcompat.app.AppCompatActivity
@@ -13,6 +15,11 @@ import androidx.core.content.ContextCompat
 import com.kbyai.facerecognition.SettingsActivity.Companion.getIdentifyThreshold
 import com.kbyai.facerecognition.SettingsActivity.Companion.getLivenessLevel
 import com.kbyai.facerecognition.SettingsActivity.Companion.getLivenessThreshold
+import husaynhakeem.io.facedetector.FaceBounds
+import husaynhakeem.io.facedetector.FaceBoundsOverlay
+import husaynhakeem.io.facedetector.FaceDetector
+import husaynhakeem.io.facedetector.LensFacing
+import husaynhakeem.io.facedetector.Frame as DetectorFrame
 import io.fotoapparat.Fotoapparat
 import io.fotoapparat.parameter.Resolution
 import io.fotoapparat.preview.Frame
@@ -29,9 +36,13 @@ class CameraActivityKt : AppCompatActivity() {
     val PREVIEW_HEIGHT = 1280
 
     private lateinit var cameraView: CameraView
-    private lateinit var faceView: FaceView
+    private lateinit var faceBoundsOverlay: FaceBoundsOverlay
+    private lateinit var faceDetector: FaceDetector
     private lateinit var fotoapparat: Fotoapparat
     private lateinit var context: Context
+
+    @Volatile
+    private var latestFaceBounds: List<FaceBounds> = emptyList()
 
     private var recognized = false
 
@@ -41,7 +52,18 @@ class CameraActivityKt : AppCompatActivity() {
 
         context = this
         cameraView = findViewById(R.id.preview)
-        faceView = findViewById(R.id.faceView)
+        faceBoundsOverlay = findViewById(R.id.faceBoundsOverlay)
+        faceDetector = FaceDetector(faceBoundsOverlay).apply {
+            setonFaceDetectionFailureListener(object : husaynhakeem.io.facedetector.FaceDetector.OnFaceDetectionResultListener {
+                override fun onSuccess(faceBounds: List<FaceBounds>) {
+                    latestFaceBounds = faceBounds
+                }
+
+                override fun onFailure(exception: Exception) {
+                    // Silently fail, will use ML Kit fallback
+                }
+            })
+        }
 
         if (SettingsActivity.getCameraLens(context) == CameraSelector.LENS_FACING_BACK) {
             fotoapparat = Fotoapparat.with(this)
@@ -81,7 +103,6 @@ class CameraActivityKt : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         fotoapparat.stop()
-        faceView.setFaceBoxes(null)
     }
 
     override fun onRequestPermissionsResult(
@@ -112,16 +133,28 @@ class CameraActivityKt : AppCompatActivity() {
                 // Fotoapparat provides NV21 bytes, so use nv21ToBitmap
                 val bitmap = ImageUtils.nv21ToBitmap(frame.image, frame.size.width, frame.size.height)
 
-                // Detect faces using ML Kit
-                val detectedFaces = FaceRecognitionManager.detectFaces(bitmap)
-
-                runOnUiThread {
-                    faceView.setFrameSize(Size(bitmap.width, bitmap.height))
-                    faceView.setDetectedFaces(detectedFaces)
+                // Feed frame to library face detector for overlay rendering
+                val lensFacing = if (SettingsActivity.getCameraLens(context) == CameraSelector.LENS_FACING_BACK) {
+                    LensFacing.BACK
+                } else {
+                    LensFacing.FRONT
                 }
+                faceDetector.process(
+                    DetectorFrame(
+                        data = frame.image,
+                        rotation = frame.rotation,
+                        size = Size(frame.size.width, frame.size.height),
+                        format = ImageFormat.NV21,
+                        lensFacing = lensFacing
+                    )
+                )
 
-                if(detectedFaces.isNotEmpty()) {
-                    val detectedFace = detectedFaces[0]
+                // Prefer android-face-detector results for recognition (fallback to ML Kit)
+                val detectedFace = latestFaceBounds.firstOrNull()?.let { fb ->
+                    convertFaceBoundsToDetectedFace(fb)
+                } ?: FaceRecognitionManager.detectFaces(bitmap).firstOrNull()
+
+                if(detectedFace != null) {
                     
                     // Validate face size (must be >10% of image)
                     val faceWidth = detectedFace.right - detectedFace.left
@@ -153,18 +186,7 @@ class CameraActivityKt : AppCompatActivity() {
                             val similarity = maxSimilarity
 
                             runOnUiThread {
-                                val faceImage = Utils.cropFaceML(bitmap, detectedFace)
-                                val intent = Intent(context, ResultActivity::class.java)
-                                intent.putExtra("identified_face", faceImage)
-                                intent.putExtra("enrolled_face", foundPerson!!.face)
-                                intent.putExtra("identified_name", foundPerson!!.name)
-                                intent.putExtra("employee_id", foundPerson!!.employeeId ?: "")
-                                intent.putExtra("similarity", similarity)
-                                intent.putExtra("liveness", 0.9f)
-                                intent.putExtra("yaw", detectedFace.eulerAngleY)
-                                intent.putExtra("roll", detectedFace.eulerAngleZ)
-                                intent.putExtra("pitch", detectedFace.eulerAngleX)
-                                startActivity(intent)
+                                markAttendanceAndFinish(foundPerson!!, similarity)
                             }
                         }
                     }
@@ -199,5 +221,69 @@ class CameraActivityKt : AppCompatActivity() {
         } else {
             floatArray
         }
+    }
+
+    private fun convertFaceBoundsToDetectedFace(faceBounds: FaceBounds): FaceRecognitionManager.DetectedFace {
+        val rect = android.graphics.Rect(
+            faceBounds.box.left.toInt(),
+            faceBounds.box.top.toInt(),
+            faceBounds.box.right.toInt(),
+            faceBounds.box.bottom.toInt()
+        )
+        return FaceRecognitionManager.DetectedFace(
+            boundingBox = rect,
+            eulerAngleX = 0f,
+            eulerAngleY = 0f,
+            eulerAngleZ = 0f,
+            left = rect.left.toFloat(),
+            top = rect.top.toFloat(),
+            right = rect.right.toFloat(),
+            bottom = rect.bottom.toFloat(),
+            landmarks = emptyList(),
+            contours = emptyList(),
+            liveness = 0.9f,
+            yaw = 0f,
+            roll = 0f,
+            pitch = 0f
+        )
+    }
+
+    private fun markAttendanceAndFinish(person: Person, similarity: Float) {
+        val attendanceTime = System.currentTimeMillis()
+        val employeeId = person.employeeId ?: ""
+        val employeeName = person.name
+
+        if (employeeId.isNotEmpty()) {
+            val attendanceType = AttendanceHelper.determineAttendanceType(this, employeeId, attendanceTime)
+
+            if (attendanceType != "NONE") {
+                val dbManager = DBManager(this)
+                dbManager.insertAttendance(employeeId, employeeName, attendanceTime, attendanceType)
+
+                val typeText = if (attendanceType == "CHECK_IN") "Check-in" else "Check-out"
+                android.widget.Toast.makeText(
+                    this,
+                    "$typeText successful for $employeeName (Similarity: ${String.format("%.2f", similarity)})",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } else {
+                val message = AttendanceHelper.getAttendanceTypeMessage(this, employeeId, attendanceTime)
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+        } else {
+            // Fallback for employees without ID
+            val dbManager = DBManager(this)
+            dbManager.insertAttendance("", employeeName, attendanceTime, "CHECK_IN")
+            android.widget.Toast.makeText(
+                this,
+                "Attendance marked for $employeeName (Similarity: ${String.format("%.2f", similarity)})",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+
+        // Close camera activity after short delay
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            finish()
+        }, 2000)
     }
 }

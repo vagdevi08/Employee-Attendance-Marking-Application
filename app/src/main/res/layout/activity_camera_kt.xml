@@ -12,14 +12,14 @@
         android:layout_height="match_parent">
 
     </io.fotoapparat.view.CameraView>
-    <com.kbyai.facerecognition.FaceView
-        android:id="@+id/faceView"
+    <husaynhakeem.io.facedetector.FaceBoundsOverlay
+        android:id="@+id/faceBoundsOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
-    </com.kbyai.facerecognition.FaceView>
+    </husaynhakeem.io.facedetector.FaceBoundsOverlay>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

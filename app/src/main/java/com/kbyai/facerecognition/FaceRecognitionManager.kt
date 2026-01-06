@@ -6,6 +6,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import kotlin.math.sqrt
 
 /**
@@ -13,6 +15,9 @@ import kotlin.math.sqrt
  * This replaces the KBY-AI FaceSDK
  */
 object FaceRecognitionManager {
+
+    // Ensure callbacks run off the main thread so detectFaces can be called from UI code
+    private val callbackExecutor: Executor = Executors.newSingleThreadExecutor()
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -39,13 +44,13 @@ object FaceRecognitionManager {
             var error: Exception? = null
             
             detector.process(inputImage)
-                .addOnSuccessListener { faces ->
+                .addOnSuccessListener(callbackExecutor) { faces ->
                     detectedFacesList = faces.map { face ->
                         DetectedFace.fromMLKitFace(face, bitmap)
                     }.toMutableList()
                     latch.countDown()
                 }
-                .addOnFailureListener { e ->
+                .addOnFailureListener(callbackExecutor) { e ->
                     error = e
                     latch.countDown()
                 }

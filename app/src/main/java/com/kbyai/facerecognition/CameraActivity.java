@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.media.Image;
 import android.os.Bundle;
 import android.util.Log;
@@ -29,6 +30,11 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import husaynhakeem.io.facedetector.FaceBounds;
+import husaynhakeem.io.facedetector.FaceBoundsOverlay;
+import husaynhakeem.io.facedetector.FaceDetector;
+import husaynhakeem.io.facedetector.Frame;
+import husaynhakeem.io.facedetector.LensFacing;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -51,7 +57,10 @@ public class CameraActivity extends AppCompatActivity {
     private CameraSelector        cameraSelector = null;
     private ProcessCameraProvider cameraProvider = null;
 
-    private FaceView faceView;
+    private FaceBoundsOverlay faceBoundsOverlay;
+    private FaceDetector faceDetector;
+
+    private volatile List<FaceBounds> latestFaceBounds = java.util.Collections.emptyList();
 
     private Context context;
 
@@ -65,7 +74,19 @@ public class CameraActivity extends AppCompatActivity {
         context = this;
 
         viewFinder = findViewById(R.id.preview);
-        faceView = findViewById(R.id.faceView);
+        faceBoundsOverlay = findViewById(R.id.faceBoundsOverlay);
+        faceDetector = new FaceDetector(faceBoundsOverlay);
+        faceDetector.setonFaceDetectionFailureListener(new FaceDetector.OnFaceDetectionResultListener() {
+            @Override
+            public void onSuccess(List<FaceBounds> faceBounds) {
+                latestFaceBounds = faceBounds;
+            }
+
+            @Override
+            public void onFailure(Exception exception) {
+                // Silently fail, will use ML Kit fallback
+            }
+        });
         cameraExecutorService = Executors.newFixedThreadPool(1);
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -91,7 +112,6 @@ public class CameraActivity extends AppCompatActivity {
     public void onPause() {
         super.onPause();
 
-        faceView.setFaceBoxes(null);
     }
 
     @Override
@@ -187,22 +207,39 @@ public class CameraActivity extends AppCompatActivity {
                 return;
             }
 
-            // Convert YUV frame to Bitmap using ImageUtils
-            Bitmap bitmap = convertYuvToBitmap(image);
+                // Prepare NV21 data for the detector overlay
+                byte[] nv21 = toNv21(image);
 
-            // Detect faces using ML Kit
-            List<FaceRecognitionManager.DetectedFace> detectedFaces = FaceRecognitionManager.INSTANCE.detectFaces(bitmap);
+                // Push frame to android-face-detector for drawing bounds
+                faceDetector.process(
+                    new Frame(
+                        nv21,
+                        imageProxy.getImageInfo().getRotationDegrees(),
+                        new Size(image.getWidth(), image.getHeight()),
+                        image.getFormat(),
+                        SettingsActivity.getCameraLens(this) == CameraSelector.LENS_FACING_BACK ?
+                            LensFacing.BACK : LensFacing.FRONT
+                    )
+                );
 
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    faceView.setFrameSize(new Size(bitmap.getWidth(), bitmap.getHeight()));
-                    faceView.setDetectedFaces(detectedFaces);
+                // Convert NV21 frame to Bitmap for recognition flow
+                final Bitmap bitmap = nv21ToBitmap(nv21, image.getWidth(), image.getHeight());
+
+            // Prefer android-face-detector results (fallback to ML Kit)
+            final FaceRecognitionManager.DetectedFace detectedFace;
+
+            if (latestFaceBounds != null && latestFaceBounds.size() > 0) {
+                detectedFace = convertFaceBoundsToDetectedFace(latestFaceBounds.get(0));
+            } else {
+                List<FaceRecognitionManager.DetectedFace> detectedFaces = FaceRecognitionManager.INSTANCE.detectFaces(bitmap);
+                if (detectedFaces.size() > 0) {
+                    detectedFace = detectedFaces.get(0);
+                } else {
+                    detectedFace = null;
                 }
-            });
+            }
 
-            if(detectedFaces.size() > 0) {
-                FaceRecognitionManager.DetectedFace detectedFace = detectedFaces.get(0);
+            if(detectedFace != null) {
                 
                 // Validate face size (must be >10% of image)
                 float faceWidth = detectedFace.getRight() - detectedFace.getLeft();
@@ -238,20 +275,7 @@ public class CameraActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                Bitmap faceImage = Utils.cropFaceML(bitmap, detectedFace);
-
-                                Intent intent = new Intent(context, ResultActivity.class);
-                                intent.putExtra("identified_face", faceImage);
-                                intent.putExtra("enrolled_face", foundPerson.face);
-                                intent.putExtra("identified_name", foundPerson.name);
-                                intent.putExtra("employee_id", foundPerson.employeeId != null ? foundPerson.employeeId : "");
-                                intent.putExtra("similarity", similarity);
-                                intent.putExtra("liveness", 0.9f);
-                                intent.putExtra("yaw", detectedFace.getEulerAngleY());
-                                intent.putExtra("roll", detectedFace.getEulerAngleZ());
-                                intent.putExtra("pitch", detectedFace.getEulerAngleX());
-
-                                startActivity(intent);
+                                markAttendanceAndFinish(foundPerson, similarity);
                             }
                         });
                     }
@@ -268,8 +292,8 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
-    // Helper method to convert YUV Image to Bitmap
-    private Bitmap convertYuvToBitmap(Image image) {
+    // Convert camera YUV image into NV21 byte array for downstream consumers
+    private byte[] toNv21(Image image) {
         Image.Plane[] planes = image.getPlanes();
         ByteBuffer yBuffer = planes[0].getBuffer();
         ByteBuffer uBuffer = planes[1].getBuffer();
@@ -284,9 +308,14 @@ public class CameraActivity extends AppCompatActivity {
         vBuffer.get(nv21, ySize, vSize);
         uBuffer.get(nv21, ySize + vSize, uSize);
 
-        android.graphics.YuvImage yuvImage = new android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+        return nv21;
+    }
+
+    // Convert NV21 byte array to Bitmap for recognition
+    private Bitmap nv21ToBitmap(byte[] nv21, int width, int height) {
+        android.graphics.YuvImage yuvImage = new android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, width, height, null);
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        yuvImage.compressToJpeg(new android.graphics.Rect(0, 0, image.getWidth(), image.getHeight()), 100, out);
+        yuvImage.compressToJpeg(new android.graphics.Rect(0, 0, width, height), 100, out);
         byte[] imageBytes = out.toByteArray();
         return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
     }
@@ -317,5 +346,73 @@ public class CameraActivity extends AppCompatActivity {
         }
         
         return floatArray;
+    }
+
+    private FaceRecognitionManager.DetectedFace convertFaceBoundsToDetectedFace(FaceBounds faceBounds) {
+        android.graphics.Rect rect = new android.graphics.Rect(
+                (int) faceBounds.getBox().left,
+                (int) faceBounds.getBox().top,
+                (int) faceBounds.getBox().right,
+                (int) faceBounds.getBox().bottom
+        );
+
+        return new FaceRecognitionManager.DetectedFace(
+                rect,
+                0f,
+                0f,
+                0f,
+                (float) rect.left,
+                (float) rect.top,
+                (float) rect.right,
+                (float) rect.bottom,
+                java.util.Collections.emptyList(),
+                java.util.Collections.emptyList(),
+                0.9f,
+                0f,
+                0f,
+                0f
+        );
+    }
+
+    private void markAttendanceAndFinish(Person person, float similarity) {
+        long attendanceTime = System.currentTimeMillis();
+        String employeeId = person.employeeId != null ? person.employeeId : "";
+        String employeeName = person.name;
+
+        if (!employeeId.isEmpty()) {
+            String attendanceType = AttendanceHelper.INSTANCE.determineAttendanceType(this, employeeId, attendanceTime);
+
+            if (!attendanceType.equals("NONE")) {
+                DBManager dbManager = new DBManager(this);
+                dbManager.insertAttendance(employeeId, employeeName, attendanceTime, attendanceType);
+
+                String typeText = attendanceType.equals("CHECK_IN") ? "Check-in" : "Check-out";
+                android.widget.Toast.makeText(
+                        this,
+                        typeText + " successful for " + employeeName + " (Similarity: " + String.format("%.2f", similarity) + ")",
+                        android.widget.Toast.LENGTH_LONG
+                ).show();
+            } else {
+                String message = AttendanceHelper.INSTANCE.getAttendanceTypeMessage(this, employeeId, attendanceTime);
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+            }
+        } else {
+            // Fallback for employees without ID
+            DBManager dbManager = new DBManager(this);
+            dbManager.insertAttendance("", employeeName, attendanceTime, "CHECK_IN");
+            android.widget.Toast.makeText(
+                    this,
+                    "Attendance marked for " + employeeName + " (Similarity: " + String.format("%.2f", similarity) + ")",
+                    android.widget.Toast.LENGTH_LONG
+            ).show();
+        }
+
+        // Close camera activity after short delay
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                finish();
+            }
+        }, 2000);
     }
 }
