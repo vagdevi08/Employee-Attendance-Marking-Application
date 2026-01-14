@@ -8,9 +8,9 @@ The Android app is now configured to communicate with your FastAPI backend.
 
 1. **Android App** ([PythonFaceService.kt](app/src/main/java/com/kbyai/facerecognition/PythonFaceService.kt)):
    - Updated BASE_URL from `http://10.0.2.2:5000` → `http://10.0.2.2:8000`
-   - Added API_KEY header for authentication
+   - Supports API key authentication without hardcoding secrets
    - Fixed JSON field names to match backend (`user_id` instead of `employee_id`)
-   - All requests now include `X-API-Key` header
+   - App can send `X-API-Key` header when configured at runtime
 
 2. **Backend** ([main.py](backend/main.py)):
    - Added `/identify` endpoint for unknown face identification
@@ -50,7 +50,14 @@ Or in Android Studio: **Run → Run 'app'**
 | `/enroll` | POST | Register a new face |
 | `/identify` | POST | Identify face & mark attendance |
 
-All requests require header: `X-API-Key: sb_secret_faDP584WcLd7x_-CUyS-IA_tSaMla_l`
+All requests require header: `X-API-Key: your-secret-api-key-here`
+
+Set the API key at runtime in the app (do not hardcode in source):
+
+```kotlin
+// e.g., load from encrypted storage or remote config
+PythonFaceService.setApiKey("your-secret-api-key-here")
+```
 
 ## 🔧 For Real Device Testing
 
@@ -122,8 +129,9 @@ Tables created:
 - ✅ Check logcat: `adb logcat | grep PythonFaceService`
 
 ### "Invalid API key" error
-- ✅ Check SUPABASE_KEY in [backend/.env](backend/.env) is service role key (not publishable)
-- ✅ Get correct key from Supabase: Settings → API → Service Role
+- ✅ Ensure backend `API_KEY` is set in [backend/.env](backend/.env)
+- ✅ Use the same value in the app via `PythonFaceService.setApiKey(...)` (do not hardcode)
+- ✅ In Supabase, never expose the service role key to the client
 
 ### "No faces enrolled yet"
 - ✅ Run SQL schema first (see Database Setup above)
@@ -138,6 +146,6 @@ Tables created:
 ## 📝 Important Notes
 
 - **Emulator URL**: Always use `10.0.2.2` (maps to host's localhost)
-- **Security**: API key is hardcoded for development; use environment variables in production
+- **Security**: Never hardcode secrets in the Android app. Configure the API key at runtime (e.g., EncryptedSharedPreferences, device provisioning, or a short‑lived token from your backend).
 - **Database**: Stores face embeddings (mathematical vectors) NOT raw images
 - **Privacy**: All processing happens locally; images not sent to cloud storage

@@ -22,8 +22,9 @@ object PythonFaceService {
     // For real device: http://YOUR_COMPUTER_IP:8000
     private var BASE_URL = "http://192.168.0.6:8000"
     
-    // API Key from backend .env file
-    private const val API_KEY = "sb_secret_faDP584WcLd7x_-CUyS-IA_tSaMla_l"
+    // API key is not hardcoded. Set it at runtime (e.g., from secure storage).
+    @Volatile
+    private var apiKey: String? = null
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -37,6 +38,19 @@ object PythonFaceService {
         BASE_URL = url
     }
     
+    fun setApiKey(key: String?) {
+        apiKey = key?.takeIf { it.isNotBlank() }
+    }
+
+    fun clearApiKey() {
+        apiKey = null
+    }
+
+    private fun Request.Builder.withApiKey(): Request.Builder {
+        val key = apiKey
+        return if (!key.isNullOrBlank()) this.addHeader("X-API-Key", key) else this
+    }
+
     fun getBaseUrl(): String = BASE_URL
     
     /**
@@ -55,7 +69,7 @@ object PythonFaceService {
     fun checkHealth(callback: (Boolean, String) -> Unit) {
         val request = Request.Builder()
             .url("$BASE_URL/health")
-            .addHeader("X-API-Key", API_KEY)
+            .withApiKey()
             .get()
             .build()
         
@@ -99,7 +113,7 @@ object PythonFaceService {
         val body = json.toString().toRequestBody(JSON)
         val request = Request.Builder()
             .url("$BASE_URL/enroll")
-            .addHeader("X-API-Key", API_KEY)
+            .withApiKey()
             .post(body)
             .build()
         
@@ -147,7 +161,7 @@ object PythonFaceService {
         val body = json.toString().toRequestBody(JSON)
         val request = Request.Builder()
             .url("$BASE_URL/identify")
-            .addHeader("X-API-Key", API_KEY)
+            .withApiKey()
             .post(body)
             .build()
         
@@ -211,6 +225,7 @@ object PythonFaceService {
     fun listEnrolled(callback: (List<EnrolledPerson>) -> Unit) {
         val request = Request.Builder()
             .url("$BASE_URL/list")
+            .withApiKey()
             .get()
             .build()
         
@@ -253,6 +268,7 @@ object PythonFaceService {
     fun deleteFace(employeeId: String, callback: (Boolean, String) -> Unit) {
         val request = Request.Builder()
             .url("$BASE_URL/delete/$employeeId")
+            .withApiKey()
             .delete()
             .build()
         
