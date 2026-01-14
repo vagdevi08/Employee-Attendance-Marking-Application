@@ -6,9 +6,9 @@ python-multipart==0.0.6
 # Face recognition - lightweight for CPU
 onnxruntime==1.23.2
 opencv-python-headless==4.9.0.80
-# numpy 1.26 has wheels for Python 3.12/3.13 and stays compatible with onnxruntime/scikit-learn
+# numpy 1.26 has wheels for Python 3.12/3.13 and stays compatible with onnxruntime
 numpy==1.26.4
-scikit-learn==1.3.2
+# Note: scikit-learn removed - using pure NumPy cosine similarity for lower memory
 
 # Database
 supabase==2.3.4
