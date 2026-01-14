@@ -72,6 +72,23 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        app:title="Python Face Recognition Service">
+
+        <EditTextPreference
+            app:defaultValue="http://10.0.2.2:5000"
+            app:key="python_service_url"
+            app:title="Service URL"
+            app:summary="Python face recognition service URL (for emulator: http://10.0.2.2:5000, for device: http://YOUR_IP:5000)"
+            app:useSimpleSummaryProvider="true" />
+
+        <Preference
+            app:key="test_python_service"
+            app:title="Test Connection"
+            app:summary="Check if Python service is running" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         app:icon="@drawable/ic_reset"
         app:title="@string/reset">
 

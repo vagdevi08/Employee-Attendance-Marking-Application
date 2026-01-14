@@ -35,6 +35,10 @@ class MainActivity : AppCompatActivity() {
     private fun initializeApp() {
         textWarning.visibility = View.GONE
         
+        // Configure Python service URL
+        val pythonServiceUrl = SettingsActivity.getPythonServiceUrl(this)
+        PythonFaceService.setBaseUrl(pythonServiceUrl)
+        
         dbManager = DBManager(this)
         dbManager.loadPerson()
 
@@ -76,20 +80,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 var bitmap: Bitmap = Utils.getCorrectlyOrientedImage(this, data?.data!!)
 
-                val detectedFaces = FaceRecognitionManager.detectFaces(bitmap)
-
-                if (detectedFaces.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.no_face_detected), Toast.LENGTH_SHORT).show()
-                } else if (detectedFaces.size > 1) {
-                    Toast.makeText(this, getString(R.string.multiple_face_detected), Toast.LENGTH_SHORT).show()
-                } else {
-                    val face = detectedFaces[0]
-                    val faceImage = Utils.cropFaceML(bitmap, face)
-                    val embeddings = FaceRecognitionManager.extractEmbeddings(bitmap, face)
-                    
-                    // Show enrollment dialog to get employee ID and name
-                    showEnrollmentDialog(faceImage, embeddings)
-                }
+                // Show enrollment dialog - Python service will validate face
+                showEnrollmentDialog(bitmap)
             } catch (e: Exception) {
                 e.printStackTrace()
                 Toast.makeText(this, "Error processing image", Toast.LENGTH_SHORT).show()
@@ -97,7 +89,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showEnrollmentDialog(faceImage: Bitmap, embeddings: FloatArray) {
+    private fun showEnrollmentDialog(bitmap: Bitmap) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_enroll_employee, null)
         val editEmployeeId = dialogView.findViewById<EditText>(R.id.editEmployeeId)
         val editEmployeeName = dialogView.findViewById<EditText>(R.id.editEmployeeName)
@@ -134,13 +126,27 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Enroll the employee
-            // Convert FloatArray to ByteArray for storage
-            val embeddingsBytes = floatArrayToByteArray(embeddings)
-            dbManager.insertPerson(employeeId, employeeName, faceImage, embeddingsBytes)
-            personAdapter.notifyDataSetChanged()
-            Toast.makeText(this, "Employee enrolled successfully!", Toast.LENGTH_SHORT).show()
-            dialog.dismiss()
+            // Show progress
+            buttonEnroll.isEnabled = false
+            buttonEnroll.text = "Enrolling..."
+
+            // Enroll using Python service for better face recognition
+            PythonFaceService.enrollFace(employeeId, employeeName, bitmap) { success, message ->
+                runOnUiThread {
+                    if (success) {
+                        // Also save to local database for offline access
+                        // Create empty embeddings as they're stored in Python service
+                        dbManager.insertPerson(employeeId, employeeName, bitmap, ByteArray(0))
+                        personAdapter.notifyDataSetChanged()
+                        Toast.makeText(this, "Employee enrolled successfully!", Toast.LENGTH_LONG).show()
+                        dialog.dismiss()
+                    } else {
+                        Toast.makeText(this, "Enrollment failed: $message", Toast.LENGTH_LONG).show()
+                        buttonEnroll.isEnabled = true
+                        buttonEnroll.text = "Enroll"
+                    }
+                }
+            }
         }
 
         dialog.show()

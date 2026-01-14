@@ -96,6 +96,12 @@ class SettingsActivity : AppCompatActivity() {
             
             return currentMinutes >= startMinutes && currentMinutes <= endMinutes
         }
+
+        @JvmStatic
+        fun getPythonServiceUrl(context: Context): String {
+            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            return sharedPreferences.getString("python_service_url", "http://10.0.2.2:5000") ?: "http://10.0.2.2:5000"
+        }
     }
 
     lateinit var dbManager: DBManager
@@ -171,6 +177,25 @@ class SettingsActivity : AppCompatActivity() {
                 settingsActivity.dbManager.clearDB()
 
                 Toast.makeText(activity, getString(R.string.cleared_all_person), Toast.LENGTH_LONG).show()
+                true
+            }
+
+            val testServicePref = findPreference<Preference>("test_python_service")
+            testServicePref?.setOnPreferenceClickListener {
+                val url = getPythonServiceUrl(requireContext())
+                PythonFaceService.setBaseUrl(url)
+                
+                Toast.makeText(context, "Testing connection...", Toast.LENGTH_SHORT).show()
+                
+                PythonFaceService.checkHealth { success, message ->
+                    activity?.runOnUiThread {
+                        if (success) {
+                            Toast.makeText(context, "✓ Connected to Python service", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "✗ Connection failed: $message", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
                 true
             }
         }

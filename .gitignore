@@ -9,9 +9,29 @@
 /.idea/assetWizardSettings.xml
 .DS_Store
 /build
+build/
+app/build/
+backend/build/
 /captures
 .externalNativeBuild
 .cxx
 local.properties
 
 .idea/
+
+# Python virtual environments
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Python env files
+backend/.env
+.env
+
+# Large model files (download separately)
+models/*.onnx
+*.onnx

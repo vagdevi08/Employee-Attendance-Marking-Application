@@ -40,11 +40,13 @@ class CameraActivityKt : AppCompatActivity() {
     private lateinit var faceDetector: FaceDetector
     private lateinit var fotoapparat: Fotoapparat
     private lateinit var context: Context
+    private lateinit var dbManager: DBManager
 
     @Volatile
     private var latestFaceBounds: List<FaceBounds> = emptyList()
 
     private var recognized = false
+    private var isProcessing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +55,16 @@ class CameraActivityKt : AppCompatActivity() {
         context = this
         cameraView = findViewById(R.id.preview)
         faceBoundsOverlay = findViewById(R.id.faceBoundsOverlay)
+        
+        // Configure Python service URL
+        val pythonServiceUrl = SettingsActivity.getPythonServiceUrl(this)
+        PythonFaceService.setBaseUrl(pythonServiceUrl)
+        
+        // Load enrolled people from database
+        dbManager = DBManager(this)
+        dbManager.loadPerson()
+        
+        android.util.Log.d(TAG, "Enrolled people count: ${DBManager.personList.size}")
         faceDetector = FaceDetector(faceBoundsOverlay).apply {
             setonFaceDetectionFailureListener(object : husaynhakeem.io.facedetector.FaceDetector.OnFaceDetectionResultListener {
                 override fun onSuccess(faceBounds: List<FaceBounds>) {
@@ -124,75 +136,45 @@ class CameraActivityKt : AppCompatActivity() {
 
         override fun process(frame: Frame) {
 
-            if(recognized == true) {
+            if(recognized == true || isProcessing) {
                 return
             }
 
             try {
+                isProcessing = true
+                
                 // Convert frame to bitmap using ML Kit compatible method
                 // Fotoapparat provides NV21 bytes, so use nv21ToBitmap
                 val bitmap = ImageUtils.nv21ToBitmap(frame.image, frame.size.width, frame.size.height)
 
-                // Feed frame to library face detector for overlay rendering
-                val lensFacing = if (SettingsActivity.getCameraLens(context) == CameraSelector.LENS_FACING_BACK) {
-                    LensFacing.BACK
-                } else {
-                    LensFacing.FRONT
-                }
-                faceDetector.process(
-                    DetectorFrame(
-                        data = frame.image,
-                        rotation = frame.rotation,
-                        size = Size(frame.size.width, frame.size.height),
-                        format = ImageFormat.NV21,
-                        lensFacing = lensFacing
-                    )
-                )
-
-                // Prefer android-face-detector results for recognition (fallback to ML Kit)
-                val detectedFace = latestFaceBounds.firstOrNull()?.let { fb ->
-                    convertFaceBoundsToDetectedFace(fb)
-                } ?: FaceRecognitionManager.detectFaces(bitmap).firstOrNull()
-
-                if(detectedFace != null) {
-                    
-                    // Validate face size (must be >10% of image)
-                    val faceWidth = detectedFace.right - detectedFace.left
-                    val faceHeight = detectedFace.bottom - detectedFace.top
-                    val faceArea = faceWidth * faceHeight
-                    val imageArea = bitmap.width * bitmap.height
-                    val faceSizeRatio = faceArea / imageArea
-                    
-                    if (faceSizeRatio > 0.1f) {
-                        // Extract embeddings
-                        val embeddings = FaceRecognitionManager.extractEmbeddings(bitmap, detectedFace)
-
-                        var maxSimilarity = 0f
-                        var identifiedPerson: Person? = null
+                // Use Python service for better face recognition
+                PythonFaceService.identifyFace(bitmap, SettingsActivity.getIdentifyThreshold(context)) { result ->
+                    if (result.identified) {
+                        recognized = true
                         
-                        for (person in DBManager.personList) {
-                            val storedEmbeddings = convertByteArrayToFloatArray(person.templates)
-                            val similarity = FaceRecognitionManager.calculateSimilarity(embeddings, storedEmbeddings)
-                            
-                            if (similarity > maxSimilarity) {
-                                maxSimilarity = similarity
-                                identifiedPerson = person
-                            }
-                        }
+                        // Find person in database to get full details
+                        val person = DBManager.personList.find { it.employeeId == result.employeeId }
                         
-                        if (maxSimilarity > SettingsActivity.getIdentifyThreshold(context)) {
-                            recognized = true
-                            val foundPerson = identifiedPerson
-                            val similarity = maxSimilarity
-
+                        if (person != null) {
                             runOnUiThread {
-                                markAttendanceAndFinish(foundPerson!!, similarity)
+                                markAttendanceAndFinish(person, result.similarity)
+                            }
+                        } else {
+                            // Create temporary person object
+                            val tempPerson = Person(result.employeeId, result.name, null, ByteArray(0))
+                            runOnUiThread {
+                                markAttendanceAndFinish(tempPerson, result.similarity)
                             }
                         }
+                    } else {
+                        // No match or error
+                        android.util.Log.d(TAG, "No match: ${result.message} ${result.error}")
+                        isProcessing = false
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                isProcessing = false
             }
         }
     }
@@ -249,21 +231,25 @@ class CameraActivityKt : AppCompatActivity() {
     }
 
     private fun markAttendanceAndFinish(person: Person, similarity: Float) {
+        // Stop camera immediately to prevent multiple recognitions
+        fotoapparat.stop()
+        
         val attendanceTime = System.currentTimeMillis()
         val employeeId = person.employeeId ?: ""
         val employeeName = person.name
+        val dbManager = DBManager(this)
 
         if (employeeId.isNotEmpty()) {
             val attendanceType = AttendanceHelper.determineAttendanceType(this, employeeId, attendanceTime)
 
             if (attendanceType != "NONE") {
-                val dbManager = DBManager(this)
+                // Mark attendance in database
                 dbManager.insertAttendance(employeeId, employeeName, attendanceTime, attendanceType)
 
                 val typeText = if (attendanceType == "CHECK_IN") "Check-in" else "Check-out"
                 android.widget.Toast.makeText(
                     this,
-                    "$typeText successful for $employeeName (Similarity: ${String.format("%.2f", similarity)})",
+                    "✓ Attendance Marked!\n$typeText for $employeeName",
                     android.widget.Toast.LENGTH_LONG
                 ).show()
             } else {
@@ -272,18 +258,17 @@ class CameraActivityKt : AppCompatActivity() {
             }
         } else {
             // Fallback for employees without ID
-            val dbManager = DBManager(this)
             dbManager.insertAttendance("", employeeName, attendanceTime, "CHECK_IN")
             android.widget.Toast.makeText(
                 this,
-                "Attendance marked for $employeeName (Similarity: ${String.format("%.2f", similarity)})",
+                "✓ Attendance Marked!\n$employeeName",
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
 
-        // Close camera activity after short delay
+        // Close camera activity after 3 seconds to allow user to see the message
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             finish()
-        }, 2000)
+        }, 3000)
     }
 }

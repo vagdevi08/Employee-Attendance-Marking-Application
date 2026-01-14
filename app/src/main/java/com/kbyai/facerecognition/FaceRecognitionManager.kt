@@ -26,7 +26,7 @@ object FaceRecognitionManager {
             .setContourMode(FaceDetectorOptions.CONTOUR_MODE_ALL)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
             .enableTracking()
-            .setMinFaceSize(0.1f)
+            .setMinFaceSize(0.05f)  // Lowered from 0.1f to detect smaller faces
             .build()
     )
 
