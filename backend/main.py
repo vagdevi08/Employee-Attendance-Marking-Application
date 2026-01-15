@@ -347,9 +347,15 @@ async def recognize_face(
                 attendance_count_today=attendance_count
             )
         
-        # Get user name
-        user_info = database._client.table('face_embeddings').select('name').eq('user_id', request.user_id).execute()
-        user_name = user_info.data[0]['name'] if user_info.data else request.user_id
+        # Get user name (fallback to user_id if database query fails)
+        user_name = request.user_id
+        try:
+            if database._client is not None:
+                user_info = database._client.table('face_embeddings').select('name').eq('user_id', request.user_id).execute()
+                if user_info.data:
+                    user_name = user_info.data[0]['name']
+        except Exception as e:
+            logger.warning(f"Could not retrieve user name for {request.user_id}: {e}")
         
         # Insert attendance record
         attendance_id = database.insert_attendance(

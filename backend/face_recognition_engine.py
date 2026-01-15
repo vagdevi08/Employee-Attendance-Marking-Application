@@ -129,7 +129,11 @@ class FaceRecognitionEngine:
             
             # CRITICAL: Disable memory arena - uses less memory but slightly slower
             # For 1GB RAM, we prioritize memory over speed
-            sess_options.enable_mem_arena = False
+            # Note: Attribute name is 'enable_cpu_mem_arena' in ONNX Runtime 1.22+
+            if hasattr(sess_options, 'enable_cpu_mem_arena'):
+                sess_options.enable_cpu_mem_arena = False
+            elif hasattr(sess_options, 'enable_mem_arena'):
+                sess_options.enable_mem_arena = False
             
             # CRITICAL: Explicitly use CPU only - no GPU, CUDA, TensorRT.
             # Forcing CPUExecutionProvider keeps the deployment compatible with

@@ -3,19 +3,28 @@
 -- Run these SQL commands in your Supabase SQL Editor
 -- ============================================================================
 
+-- Enable pgvector extension (required for vector similarity search)
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Table: face_embeddings
 -- Stores face embeddings (NOT raw images) for each user
+-- Note: Current code stores embeddings as JSON TEXT for compatibility
+-- For optimal performance with pgvector, consider migrating to vector type
 CREATE TABLE IF NOT EXISTS face_embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id VARCHAR(100) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    embedding TEXT NOT NULL, -- JSON array of floats
+    embedding TEXT NOT NULL, -- JSON array of floats (compatible with current code)
+    -- Future: embedding vector(512) -- Use pgvector for similarity search
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Index for fast user_id lookups
 CREATE INDEX IF NOT EXISTS idx_face_embeddings_user_id ON face_embeddings(user_id);
+
+-- Note: If migrating to pgvector vector type, add this index:
+-- CREATE INDEX ON face_embeddings USING ivfflat (embedding vector_cosine_ops);
 
 -- Table: attendance
 -- Stores attendance records with timestamps

@@ -60,6 +60,10 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
+        if self._client is None:
+            logger.error("Database client not initialized. Cannot store face embedding.")
+            return False
+            
         try:
             # Convert embedding to list for JSON storage
             embedding_list = embedding.tolist()
@@ -104,6 +108,10 @@ class Database:
         Returns:
             Embedding vector or None if not found
         """
+        if self._client is None:
+            logger.error("Database client not initialized. Cannot retrieve face embedding.")
+            return None
+            
         try:
             result = self._client.table('face_embeddings').select('embedding').eq('user_id', user_id).execute()
             
@@ -158,6 +166,10 @@ class Database:
         Returns:
             Count of attendance records today
         """
+        if self._client is None:
+            logger.error("Database client not initialized. Cannot get attendance count.")
+            return 0
+            
         try:
             today = date.today().isoformat()
             
@@ -188,6 +200,10 @@ class Database:
         Returns:
             Attendance record ID or None if failed
         """
+        if self._client is None:
+            logger.error("Database client not initialized. Cannot insert attendance.")
+            return None
+            
         try:
             result = self._client.table('attendance').insert({
                 'user_id': user_id,
@@ -214,6 +230,10 @@ class Database:
         Returns:
             True if connected, False otherwise
         """
+        if self._client is None:
+            logger.error("Database client not initialized")
+            return False
+            
         try:
             # Simple query to test connection
             result = self._client.table('face_embeddings').select('user_id').limit(1).execute()
