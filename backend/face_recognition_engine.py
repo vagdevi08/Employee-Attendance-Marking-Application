@@ -17,7 +17,6 @@ import numpy as np
 import onnxruntime as ort
 from typing import Optional
 import logging
-import pathlib
 import os
 
 logger = logging.getLogger(__name__)
@@ -92,18 +91,24 @@ class FaceRecognitionEngine:
         - enable_mem_pattern=False (prevents memory pattern optimizations that use more RAM)
         """
         logger.info("Loading face recognition model (CPU-optimized)...")
-        
-        # Resolve model path
-        backend_dir = pathlib.Path(__file__).parent
-        project_root = backend_dir.parent
-        model_path = str(project_root / "models" / "mobilefacenet.onnx")
-        
-        # Check if model exists
+
+        # Resolve model path relative to this file and convert to absolute path
+        # NOTE: We use an absolute path so that uvicorn/gunicorn workers and
+        # different working directories cannot break model loading.
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.abspath(
+            os.path.join(backend_dir, "models", "face_embedding.onnx")
+        )
+
+        # Fail fast with a clear error if the ONNX model is missing
         if not os.path.exists(model_path):
-            logger.error(f"Model not found at {model_path}")
-            logger.error("Please ensure mobilefacenet.onnx exists in models/ directory")
-            self.session = None
-            return
+            msg = (
+                f"ONNX face embedding model not found at: {model_path}. "
+                "Expected CPU-only model file 'face_embedding.onnx' in the backend/models/ directory."
+            )
+            logger.error(msg)
+            # Raising here prevents the application from starting in a bad state
+            raise FileNotFoundError(msg)
         
         try:
             # Configure ONNX Runtime session options for low-memory CPU execution
@@ -126,7 +131,10 @@ class FaceRecognitionEngine:
             # For 1GB RAM, we prioritize memory over speed
             sess_options.enable_mem_arena = False
             
-            # CRITICAL: Explicitly use CPU only - no GPU, CUDA, TensorRT
+            # CRITICAL: Explicitly use CPU only - no GPU, CUDA, TensorRT.
+            # Forcing CPUExecutionProvider keeps the deployment compatible with
+            # low-cost CPU-only instances (e.g. Azure B1s) and avoids accidental
+            # GPU/CUDA dependencies that could break production.
             providers = ['CPUExecutionProvider']
             
             # Configure CPU provider options for low memory
@@ -169,10 +177,10 @@ class FaceRecognitionEngine:
             
         except Exception as e:
             logger.error(f"Failed to load ONNX model: {e}")
-            logger.error("Face recognition will not be available")
-            self.session = None
-            self.input_name = None
-            self.input_shape = None
+            logger.error("Face recognition model initialization failed; aborting startup.")
+            # Propagate as a runtime error so the process fails fast instead of
+            # running in a degraded mode without a working face engine.
+            raise RuntimeError("Failed to initialize face recognition ONNX model") from e
     
     def _preprocess_image(self, face_image: np.ndarray) -> np.ndarray:
         """
